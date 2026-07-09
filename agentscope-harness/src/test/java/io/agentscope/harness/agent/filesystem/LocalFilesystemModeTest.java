@@ -33,6 +33,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
@@ -245,6 +247,18 @@ class LocalFilesystemModeTest {
     }
 
     @Test
+    void rooted_leadingSlashRootListsWorkspace(@TempDir Path workspace) throws IOException {
+        Files.writeString(workspace.resolve("root.txt"), "root content", StandardCharsets.UTF_8);
+
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
+
+        LsResult r = fs.ls(RuntimeContext.empty(), "/");
+        assertTrue(r.isSuccess(), () -> "'/' should resolve to workspace root, got: " + r.error());
+        assertFalse(r.entries().isEmpty(), "ls should find files in the workspace root");
+    }
+
+    @Test
     void rooted_leadingSlashWithNamespace(@TempDir Path workspace) throws IOException {
         // With namespace, "/skills" should still resolve to <workspace>/skills (not namespaced)
         Path skillsDir = workspace.resolve("skills");
@@ -288,5 +302,30 @@ class LocalFilesystemModeTest {
         org.junit.jupiter.api.Assertions.assertThrows(
                 SecurityException.class,
                 () -> fs.read(RuntimeContext.empty(), "/../etc/passwd", 0, 0));
+    }
+
+    @Test
+    void rooted_leadingSlashTildeRejected(@TempDir Path workspace) {
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                SecurityException.class,
+                () -> fs.read(RuntimeContext.empty(), "/~/.ssh/id_rsa", 0, 0));
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    void rooted_missingWindowsAbsolutePathOutsideRootsRejected(
+            @TempDir Path workspace, @TempDir Path forbidden) {
+        Path missing = forbidden.resolve("missing.txt");
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null);
+
+        Throwable t =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        SecurityException.class,
+                        () -> fs.read(RuntimeContext.empty(), missing.toString(), 0, 0));
+        assertTrue(t.getMessage().contains(missing.toString()));
     }
 }
