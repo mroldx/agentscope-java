@@ -45,6 +45,7 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -189,6 +190,20 @@ class PostgresBaseStoreTest {
         verify(preparedStatement).setString(3, "{\"k\":\"v\"}");
         verify(preparedStatement).setLong(eq(4), anyLong());
         verify(preparedStatement).executeUpdate();
+    }
+
+    @Test
+    void putUsesValidUpsertSql() throws SQLException {
+        when(preparedStatement.executeUpdate()).thenReturn(1);
+
+        PostgresBaseStore store = PostgresBaseStore.builder(dataSource).build();
+        store.put(List.of("a"), "key", Map.of("k", "v"));
+
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(connection).prepareStatement(sqlCaptor.capture());
+        String sql = sqlCaptor.getValue();
+        assertFalse(sql.contains(",,"));
+        assertTrue(sql.contains("version    = agentscope_store.version + 1,"));
     }
 
     @Test
